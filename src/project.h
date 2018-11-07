@@ -197,8 +197,9 @@ int   udev_device_tree_match(struct udev_device *dev,
 device_t* device_lookup(int busid, int devid);
 device_t* device_lookup_by_attributes(int vendorid, int deviceid, char *serial);
 int       device_is_ambiguous(device_t* device);
-device_t* device_add(int busid, int devid, int vendorid, int deviceid, char* serial,
-                     char *shortname, char *longname, char *sysname, struct udev_device *udev);
+device_t* device_add(int busid, int devid, int vendorid, int deviceid, int type,
+                     char *serial, char *shortname, char *longname,
+                     char *sysname, struct udev_device *udev);
 int       device_del(int  busid, int  devid);
 char*     device_type(unsigned char class, unsigned char subclass,
                       unsigned char protocol);
