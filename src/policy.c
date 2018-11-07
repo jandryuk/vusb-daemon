@@ -114,6 +114,8 @@ device_matches_udev_rule(rule_t *rule, device_t *device)
     pairs = rule->dev_sysattrs;
     while (*pairs != NULL) {
       value = udev_device_get_sysattr_value(device->udev, *pairs);
+      if (value == NULL)
+        return false;
       if (strcmp(*(pairs + 1), value))
         return false;
       pairs += 2;
@@ -124,6 +126,8 @@ device_matches_udev_rule(rule_t *rule, device_t *device)
     pairs = rule->dev_properties;
     while (*pairs != NULL) {
       value = udev_device_get_property_value(device->udev, *pairs);
+      if (value == NULL)
+        return false;
       if (strcmp(*(pairs + 1), value))
         return false;
       pairs += 2;
