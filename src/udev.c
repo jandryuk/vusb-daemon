@@ -312,6 +312,7 @@ udev_maybe_add_device(struct udev_device *dev, int auto_assign)
   const char *value;
   int busnum, devnum;
   int vendorid, deviceid;
+  int type;
   char *serial = NULL;
   char *vendor = NULL;
   char *model;
@@ -436,17 +437,18 @@ udev_maybe_add_device(struct udev_device *dev, int auto_assign)
     strcpy(serial, value);
   }
 
+  /* Find out more about the device by looking at its children */
+  type = udev_find_more(dev, auto_assign);
+
   /* Finally add the device */
   device = device_add(busnum, devnum,
                       vendorid, deviceid,
+                      type,
                       serial,
                       model, vendor,
                       sysname, dev);
   if (device == NULL)
     return NULL;
-
-  /* Find out more about the device by looking at its children */
-  device->type = udev_find_more(dev, auto_assign);
 
   if (auto_assign > 0)
     policy_auto_assign_new_device(device);
