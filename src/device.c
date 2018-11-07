@@ -131,6 +131,8 @@ device_add(int  busid, int  devid,
   device->type = type;
   list_add(&device->list, &devices.list);
 
+  xsdev_write(device);
+
   return device;
 }
 
