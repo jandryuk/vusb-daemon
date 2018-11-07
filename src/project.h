@@ -184,6 +184,7 @@ void  rpc_init(void);
 int   udev_init(void);
 void  udev_event(void);
 void  udev_fill_devices(void);
+int   common_del_device(int busnum, int devnum);
 
 device_t* device_lookup(int busid, int devid);
 device_t* device_lookup_by_attributes(int vendorid, int deviceid, char *serial);
