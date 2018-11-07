@@ -34,6 +34,8 @@
 char *xs_backend_path = NULL;
 int usb_backend_domid = 0;
 int my_domid = -1;
+char *watch_path;
+char *watch_token = "usb_dev_watch";
 
 static void*
 xmalloc(size_t size)
@@ -549,10 +551,17 @@ xenstore_init(const int backend_domid)
 int
 xenstore_new_backend(const int backend_domid)
 {
+  int ret;
   free(xs_backend_path);
   xs_backend_path = NULL;
 
-  return xenstore_init(backend_domid);
+  ret = xenstore_init(backend_domid);
+
+  /* Redo the watches! */
+  xsdev_watch_deinit();
+  xsdev_watch_init();
+
+  return ret;
 }
 
 /**
@@ -564,4 +573,175 @@ xenstore_deinit(void)
 {
   xs_daemon_close(xs_handle);
   xs_handle = NULL;
+}
+
+void
+xsdev_watch_deinit(void)
+{
+  if (watch_path) {
+    xs_unwatch(xs_handle, watch_path, watch_token);
+    free(watch_path);
+    watch_path = NULL;
+  }
+}
+
+int
+xsdev_watch_init(void)
+{
+  if (usb_backend_domid > 0) {
+    watch_path = xasprintf("%s/data/usb", xs_backend_path);
+    xs_watch(xs_handle, watch_path, watch_token);
+  }
+
+  return xs_fileno(xs_handle);
+}
+
+void
+xsdev_event_one(char *path)
+{
+  device_t *dev;
+  unsigned int len;
+  char *dev_path;
+  char *p;
+  int busid;
+  int devid;
+  int num;
+
+  dev_path = xs_read(xs_handle, 0, path, &len);
+  if (dev_path == NULL) {
+    /* Remove */
+  }
+  free(dev_path);
+
+  xs_transaction_t t;
+
+  xd_log(LOG_INFO, "xenstore event %s", path);
+
+  p = strrchr(path, '/');
+  if (p == NULL) {
+    xd_log(LOG_ERR, "%s could not find '/' path=%s", __func__, path);
+
+    return;
+  }
+  p++;
+
+  num = sscanf(p, "dev%d-%d", &busid, &devid);
+  if (num != 2) {
+    xd_log(LOG_DEBUG, "%s could not parse path=%s", __func__, path);
+
+    return;
+  }
+
+  dev = malloc(sizeof(*dev));
+  if (dev == NULL) {
+    xd_log(LOG_ERR, "malloc *dev failed");
+    return;
+  }
+
+ restart:
+  t = xs_transaction_start(xs_handle);
+#if 0
+  struct list_head list;    /**< Linux-kernel-style list item */
+  int busid;                /**< Device bus */
+  int devid;                /**< Device ID on the bus */
+  int vendorid;             /**< Device vendor ID */
+  int deviceid;             /**< Device device ID */
+  char *serial;             /**< Device serial number */
+  char *shortname;          /**< Name shown in the UI, usually sysattr["product"] */
+  char *longname;           /**< Longer name shown nowhere I know of, usually sysattr["manufacturer"] */
+  char *sysname;            /**< Name in sysfs */
+  struct udev_device *udev; /**< A udev handle to the device, in case we need more info */
+  vm_t *vm;                 /**< VM currently using the device, or NULL for dom0 */
+  int type;                 /**< Type of the device, can be multiple types OR-ed together. see policy.h */
+#endif
+
+#define xs_read_int(v) { \
+  char *_path = xasprintf("%s/%s", path, #v); \
+  char *_p = xs_read(xs_handle, t, _path, &len); \
+  dev->v = strtol(_p, NULL, 0); \
+  free(_p); \
+  free(_path); }
+
+        xs_read_int(busid);
+        xs_read_int(devid);
+        xs_read_int(vendorid);
+        xs_read_int(deviceid);
+        xs_read_int(type);
+
+#define xs_read_string(v) { \
+  char *_path = xasprintf("%s/%s", path, #v); \
+  dev->v = xs_read(xs_handle, t, _path, &len); \
+  free(_path); }
+
+  xs_read_string(serial);
+  xs_read_string(shortname);
+  xs_read_string(longname);
+  xs_read_string(sysname);
+
+#undef xs_read_string
+#undef xs_read_int
+
+  if (xs_transaction_end(xs_handle, t, false) == false) {
+    if (errno == EAGAIN) {
+      goto restart;
+    }
+    xd_log(LOG_ERR, "%s xs_transaction_failed errno=%d (%s)",
+           __func__, errno, strerror(errno));
+    xs_transaction_end(xs_handle, t, true);
+
+    return;
+  }
+
+  dev->udev = NULL;
+  dev->vm = NULL;
+
+  if (dev->shortname == NULL ||
+      dev->longname == NULL ||
+      dev->sysname == NULL ||
+      dev->vendorid < 0 || dev->vendorid > 0xffff ||
+      dev->deviceid < 0 || dev->deviceid > 0xffff ||
+      dev->busid == 0 ||
+      dev->devid == 0) {
+    xd_log(LOG_ERR, "%s: skipping invalid device", __func__);
+    device_free(dev);
+    return;
+  }
+
+  /* Add device */
+  xd_log(LOG_INFO, "%s adding device", __func__);
+  list_add(&dev->list, &devices.list);
+}
+
+void
+xenstore_event()
+{
+  char **ret;
+
+  ret = xs_check_watch(xs_handle);
+  if (ret == NULL && errno == EAGAIN) {
+    return;
+  }
+
+  char *path = ret[XS_WATCH_PATH];
+  char *token = ret[XS_WATCH_TOKEN];
+
+  /* Ignore a watch event that doesn't have a child */
+  if (strcmp(watch_path, path) == 0) {
+    goto free_ret;
+  }
+
+  /* Ignore a watch event that doesn't have a child */
+  if (strcmp(watch_token, token) != 0) {
+    xd_log(LOG_ERR, "Unexpected token %s doesn't match our's (%s)",
+           token, watch_token);
+    goto free_ret;
+  }
+
+  xsdev_event_one(path);
+
+ free_ret:
+  free(ret);
+
+  /* We need to process all watch events, so recurse. */
+  xenstore_event();
 }
