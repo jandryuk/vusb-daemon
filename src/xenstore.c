@@ -849,6 +849,9 @@ xsdev_event_one(char *path)
   /* Add device */
   xd_log(LOG_INFO, "%s adding device", __func__);
   list_add(&dev->list, &devices.list);
+
+  /* We always auto-assign when the devices come through XenStore */
+  policy_auto_assign_new_device(dev);
 }
 
 void xsdev_assigning(char *path, char *token)
