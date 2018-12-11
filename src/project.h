@@ -189,6 +189,7 @@ device_t* device_lookup_by_attributes(int vendorid, int deviceid, char *serial);
 device_t* device_add(int busid, int devid, int vendorid, int deviceid, int type,
                      char* serial, char *shortname, char *longname, char *sysname,
                      struct udev_device *udev);
+void      device_free(device_t *device);
 int       device_del(int  busid, int  devid);
 char*     device_type(unsigned char class, unsigned char subclass,
                       unsigned char protocol);
