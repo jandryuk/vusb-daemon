@@ -845,6 +845,31 @@ xsdev_event_one(char *path)
   policy_auto_assign_new_device(dev);
 }
 
+int xsdev_fill()
+{
+  char **nodes;
+  unsigned int num;
+
+  if (watch_path == NULL) {
+    return 1;
+  }
+
+  nodes = xs_directory(xs_handle, XBT_NULL, watch_path, &num);
+  if (nodes == NULL) {
+    xd_log(LOG_ERR, "%s: failed to read xs_directory %s", __func__,
+           xs_backend_path);
+    return 0;
+  }
+
+  for (int i = 0; i < num; i++) {
+    xsdev_event_one(nodes[i]);
+  }
+
+  free(nodes);
+
+  return 1;
+}
+
 void xsdev_assigning(char *path, char *token)
 {
   int vid, pid;

@@ -233,6 +233,7 @@ int   xenstore_new_backend(const int backend_domid);
 int   xsdev_watch_init(void);
 void  xsdev_watch_deinit(void);
 void  xsdev_write(device_t *dev);
+int   xsdev_fill(void);
 void  xsdev_del(device_t *dev);
 
 char *xasprintf(const char *fmt, ...);
